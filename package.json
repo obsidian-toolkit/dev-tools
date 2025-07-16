@@ -3,7 +3,7 @@
     "publishConfig": {
         "access": "public"
     },
-    "version": "0.0.1",
+    "version": "0.0.2",
     "scripts": {
         "build": "tsc"
     },
@@ -40,5 +40,8 @@
         "ps-list": "^8.1.1",
         "semver": "^7.7.2",
         "tsx": "^4.20.3"
+    },
+    "bin": {
+        "obsidian-dev-tools": "./dist/index.js"
     }
 }
