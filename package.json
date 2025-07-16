@@ -3,13 +3,11 @@
     "publishConfig": {
         "access": "public"
     },
-    "version": "0.0.3",
+    "type": "module",
+    "version": "0.0.7",
     "scripts": {
-        "build": "tsc"
+        "build": "pkgroll"
     },
-    "workspaces": [
-        "packages/*"
-    ],
     "devDependencies": {
         "@changesets/cli": "^2.29.5",
         "@rollup/plugin-commonjs": "^28.0.6",
@@ -19,6 +17,7 @@
         "@types/react": "19.1.6",
         "@types/react-dom": "18.3.1",
         "obsidian": "^1.8.7",
+        "pkgroll": "^2.14.3",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
         "rollup": "^4.44.0",
@@ -42,6 +41,6 @@
         "tsx": "^4.20.3"
     },
     "bin": {
-        "obsidian-dev-tools": "tsx ./src/index.ts"
+        "obsidian-dev-tools": "./dist/index.js"
     }
 }
