@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { findUpSync } from 'find-up-simple';
 import { select, confirm, input } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { execSync } from 'node:child_process';
@@ -396,6 +397,12 @@ async function startObsidian() {
   }
 }
 
+const root = findUpSync("manifest.json");
+if (!root) {
+  process.exit(1);
+} else {
+  process.chdir(root);
+}
 (async () => {
   const command = process.argv[2];
   try {
