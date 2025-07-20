@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { findUpSync } from 'find-up-simple';
+import path from 'node:path';
 import { select, confirm, input } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
-import path from 'node:path';
 import prettier from 'prettier';
 import semver from 'semver';
 import { spawn } from 'child_process';
@@ -397,11 +397,11 @@ async function startObsidian() {
   }
 }
 
-const root = findUpSync("manifest.json");
+const root = findUpSync("package.json");
 if (!root) {
   process.exit(1);
 } else {
-  process.chdir(root);
+  process.chdir(path.dirname(root));
 }
 (async () => {
   const command = process.argv[2];
