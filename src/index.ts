@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { Command } from 'commander';
 import { findUpSync } from 'find-up-simple';
 import path from 'node:path';
 
@@ -13,22 +14,40 @@ if (!root) {
     process.chdir(path.dirname(root));
 }
 
-(async () => {
-    const command = process.argv[2];
+const program = new Command();
 
-    try {
-        switch (command) {
-            case 'start':
-                await startObsidian();
-                break;
-            case 'release':
-                await release();
-                break;
-            default:
-                console.log('Usage: obsidian-cli <start|release>');
+program
+    .name('obsidian-cli')
+    .description('CLI for Obsidian plugin development')
+    .version('1.0.0');
+
+program
+    .command('start')
+    .description('Start Obsidian')
+    .action(async () => {
+        try {
+            await startObsidian();
+        } catch (error) {
+            console.error(error);
+            process.exit(1);
         }
-    } catch (error) {
-        console.error(error);
-        process.exit(1);
-    }
-})();
+    });
+
+program
+    .command('release')
+    .description('Release the plugin')
+    .option(
+        '--dry-run',
+        'Show what would be done without making changes',
+        false
+    )
+    .action(async (options) => {
+        try {
+            await release(options.dryRun);
+        } catch (error) {
+            console.error(error);
+            process.exit(1);
+        }
+    });
+
+program.parse();

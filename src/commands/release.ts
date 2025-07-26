@@ -20,6 +20,21 @@ interface JsonFile {
     version: string;
 }
 
+let isDryRun = false;
+
+function logAction(action: string, details?: string) {
+    const prefix = isDryRun ? chalk.blue('[DRY RUN]') : chalk.green('[EXEC]');
+    console.log(`${prefix} ${action}${details ? `: ${details}` : ''}`);
+}
+
+function execCommand(command: string, options: any = {}) {
+    if (isDryRun) {
+        logAction('Would execute', command);
+        return '';
+    }
+    return execSync(command, options);
+}
+
 /**
  * Checking the availability of gh CLI
  */
@@ -40,21 +55,29 @@ function checkGhCli() {
  * Cleaning and building
  */
 async function buildProject() {
-    console.log('Cleaning and building...');
+    logAction('Cleaning and building');
 
     // Clearing dist
     if (fs.existsSync(DIST_PATH)) {
-        fs.rmSync(DIST_PATH, { recursive: true, force: true });
-        console.log('The dist folder is cleared');
+        if (isDryRun) {
+            logAction('Would remove dist folder');
+        } else {
+            fs.rmSync(DIST_PATH, { recursive: true, force: true });
+            console.log('The dist folder is cleared');
+        }
     }
 
     // Build
     try {
-        execSync('npm run build', { stdio: 'inherit' });
-        console.log(chalk.green('The build is completed'));
+        execCommand('npm run build', { stdio: 'inherit' });
+        if (!isDryRun) {
+            console.log(chalk.green('The build is completed'));
+        }
     } catch (error) {
-        console.error(chalk.red(`Build error: ${error}`));
-        process.exit(1);
+        if (!isDryRun) {
+            console.error(chalk.red(`Build error: ${error}`));
+            process.exit(1);
+        }
     }
 }
 
@@ -138,14 +161,27 @@ async function createGitHubRelease(
     previousVersion: string,
     repoUrl: string
 ) {
-    console.log('Creating a GitHub release...');
+    logAction('Creating GitHub release', version);
 
     // Get a changelog for the version
-    const changelogSection = extractMatchedVersionSection(version);
+    const changelogSection = await extractMatchedVersionSection(version);
 
     // Create a release body
     const fullChangelogUrl = `${repoUrl}/compare/${previousVersion}...${version}`;
     const releaseBody = `${changelogSection}\n\n**Full Changelog**: ${fullChangelogUrl}`;
+
+    if (isDryRun) {
+        logAction(
+            'Would create release with body',
+            releaseBody.substring(0, 100) + '...'
+        );
+        console.log(
+            chalk.blue(
+                `[DRY RUN] Release ${version} would be created and published`
+            )
+        );
+        return;
+    }
 
     // Get all files from dist
     const distFiles = fs
@@ -173,7 +209,11 @@ async function changeReleaseInJson(jsonPath: string, release: string) {
             parser: 'json',
         });
 
-        fs.writeFileSync(jsonPath, formatted);
+        if (isDryRun) {
+            logAction(`Would update ${jsonPath}`, `version: ${release}`);
+        } else {
+            fs.writeFileSync(jsonPath, formatted);
+        }
     } catch (err: any) {
         console.error('Error reading JSON file:', err);
         process.exit(1);
@@ -185,18 +225,26 @@ async function changeReleaseInJson(jsonPath: string, release: string) {
  */
 async function performGitOperations(version: string, branch: string) {
     try {
-        execSync('git reset', { stdio: 'ignore' });
-        execSync(`git add ${PACKAGE_PATH} ${MANIFEST_PATH}`, {
+        execCommand('git reset', { stdio: 'ignore' });
+        execCommand(`git add ${PACKAGE_PATH} ${MANIFEST_PATH}`, {
             stdio: 'ignore',
         });
-        execSync(`git commit -m 'chore: update plugin version to ${version}'`, {
-            stdio: 'ignore',
-        });
-        execSync(`git push origin ${branch}`, { stdio: 'ignore' });
-        console.log(chalk.green('The changes are running in the repo'));
+        execCommand(
+            `git commit -m 'chore: update plugin version to ${version}'`,
+            {
+                stdio: 'ignore',
+            }
+        );
+        execCommand(`git push origin ${branch}`, { stdio: 'ignore' });
+
+        if (!isDryRun) {
+            console.log(chalk.green('The changes are running in the repo'));
+        }
     } catch (error) {
-        console.error('Error of git operations:', error);
-        process.exit(1);
+        if (!isDryRun) {
+            console.error('Error of git operations:', error);
+            process.exit(1);
+        }
     }
 }
 
@@ -297,11 +345,11 @@ async function getVersion(): Promise<{
     previousVersion: string;
 }> {
     try {
-        const releasesOutput = execSync('gh release list --limit 100', {
-            stdio: 'pipe',
-        })
-            .toString()
-            .trim();
+        const releasesOutput = isDryRun
+            ? '1.0.0\t...'
+            : execSync('gh release list --limit 100', { stdio: 'pipe' })
+                  .toString()
+                  .trim();
 
         const releases = releasesOutput
             ? releasesOutput.split('\n').map((line) => line.split('\t')[0])
@@ -318,9 +366,9 @@ async function getVersion(): Promise<{
         return { version, previousVersion: currentVersion };
     } catch (error) {
         // Fallback on git tags if gh does not work
-        const tagOutput = execSync('git tag', { stdio: 'pipe' })
-            .toString()
-            .trim();
+        const tagOutput = isDryRun
+            ? ''
+            : execSync('git tag', { stdio: 'pipe' }).toString().trim();
         const tags = tagOutput ? tagOutput.split('\n') : [];
         const currentVersion = tags[tags.length - 1];
 
@@ -334,7 +382,9 @@ async function getVersion(): Promise<{
     }
 }
 
-export async function release() {
+export async function release(isDryRunOption: boolean): Promise<void> {
+    isDryRun = isDryRunOption;
+
     checkGhCli();
 
     while (true) {
@@ -376,27 +426,37 @@ export async function release() {
         await changeReleaseInJson(PACKAGE_PATH, RELEASE_VERSION);
         await changeReleaseInJson(MANIFEST_PATH, RELEASE_VERSION);
 
-        console.log(
-            chalk.green(
-                `Version updated to ${RELEASE_VERSION} in package.json and manifest.json`
-            )
-        );
-
-        const confirmContinue = await confirm({
-            message: 'Continue with git operations and release?',
-            default: true,
-        });
-
-        if (!confirmContinue) {
-            console.log('See you later!');
-            process.exit(0);
+        if (isDryRun) {
+            console.log(
+                chalk.blue(
+                    `[DRY RUN] Version would be updated to ${RELEASE_VERSION} in package.json and manifest.json`
+                )
+            );
+        } else {
+            console.log(
+                chalk.green(
+                    `Version updated to ${RELEASE_VERSION} in package.json and manifest.json`
+                )
+            );
         }
 
-        const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-            stdio: 'pipe',
-        })
-            .toString()
-            .trim();
+        if (!isDryRun) {
+            const confirmContinue = await confirm({
+                message: 'Continue with git operations and release?',
+                default: true,
+            });
+
+            if (!confirmContinue) {
+                console.log('See you later!');
+                process.exit(0);
+            }
+        }
+
+        const currentBranch = isDryRun
+            ? 'main'
+            : execSync('git rev-parse --abbrev-ref HEAD', { stdio: 'pipe' })
+                  .toString()
+                  .trim();
 
         console.log(`Working with a branch: ${currentBranch}`);
 
@@ -406,7 +466,9 @@ export async function release() {
                     `Expected one of branches: ${MAIN_BRANCHES.join(', ')}, got branch: ${currentBranch}`
                 )
             );
-            process.exit(1);
+            if (!isDryRun) {
+                process.exit(1);
+            }
         }
 
         await performGitOperations(RELEASE_VERSION, currentBranch);
@@ -417,11 +479,19 @@ export async function release() {
 
         await createGitHubRelease(RELEASE_VERSION, previousVersion, repoUrl);
 
-        console.log(
-            chalk.green(
-                `Release ${RELEASE_VERSION} has been successfully created and published!`
-            )
-        );
+        if (isDryRun) {
+            console.log(
+                chalk.blue(
+                    `🔍 DRY RUN COMPLETE: Release ${RELEASE_VERSION} would be successfully created and published!`
+                )
+            );
+        } else {
+            console.log(
+                chalk.green(
+                    `Release ${RELEASE_VERSION} has been successfully created and published!`
+                )
+            );
+        }
 
         break;
     }
