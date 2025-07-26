@@ -260,7 +260,9 @@ async function versionMenu(previousVersions, currentVersion) {
 }
 async function getVersion() {
   try {
-    const releasesOutput = isDryRun ? "1.0.0	..." : execSync("gh release list --limit 100", { stdio: "pipe" }).toString().trim();
+    const releasesOutput = execSync("gh release list --limit 100", {
+      stdio: "pipe"
+    }).toString().trim();
     const releases = releasesOutput ? releasesOutput.split("\n").map((line) => line.split("	")[0]) : [];
     const currentVersion = releases[0];
     if (releases.length === 0) {
