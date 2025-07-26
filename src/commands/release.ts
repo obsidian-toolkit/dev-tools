@@ -1,9 +1,12 @@
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
+import { readFileSync } from 'fs';
+import { Content, Root } from 'mdast';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import prettier from 'prettier';
+import { remark } from 'remark';
 import semver from 'semver';
 
 const MANIFEST_PATH = 'manifest.json';
@@ -15,26 +18,6 @@ const MAIN_BRANCHES = ['main', 'master'];
 
 interface JsonFile {
     version: string;
-}
-
-function setRootFolder() {
-    let current = process.cwd();
-    while (true) {
-        const pkg = path.join(current, 'manifest.json');
-        if (fs.existsSync(pkg)) {
-            process.chdir(current);
-            return current;
-        }
-
-        const parent = path.dirname(current);
-        if (parent === current) {
-            console.log(
-                chalk.red('package.json not found in any parent directories')
-            );
-            process.exit(1);
-        }
-        current = parent;
-    }
 }
 
 /**
@@ -75,6 +58,62 @@ async function buildProject() {
     }
 }
 
+async function traverse(version: string): Promise<string | null> {
+    const changelog = readFileSync('CHANGELOG.md', 'utf-8');
+    let found = false;
+
+    function inner() {
+        return (tree: Root) => {
+            const nodes = tree.children;
+
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+
+                if (node.type !== 'heading') continue;
+                if (node.depth !== 1) continue;
+                if (node.position?.start.line !== 1) continue;
+
+                const foundVersion = node.children[0];
+                if (foundVersion.type !== 'text') continue;
+                const versionText = foundVersion.value.trim();
+
+                if (!semver.valid(versionText)) continue;
+                if (!semver.eq(versionText, version)) continue;
+
+                const sectionContent: Content[] = [];
+
+                for (let j = i + 1; j < nodes.length; j++) {
+                    const nextNode = nodes[j];
+                    if (nextNode.type === 'heading' && nextNode.depth <= 1) {
+                        break;
+                    }
+                    sectionContent.push(nextNode);
+                }
+
+                tree.children = sectionContent;
+                found = true;
+                break;
+            }
+        };
+    }
+
+    const result = await remark().use(inner).process(changelog);
+
+    return found ? String(result) : null;
+}
+
+async function extractMatchedVersionSection(
+    version: string
+): Promise<null | string> {
+    const result = await traverse(version);
+
+    if (!result) {
+        return null;
+    }
+
+    return result;
+}
+
 /**
  * Getting the Repository URL
  */
@@ -92,52 +131,6 @@ function getRepoUrl(): string {
 }
 
 /**
- * Extracting a changelog for a specific version
- */
-function extractChangelogForVersion(version: string): string {
-    try {
-        const changelogContent = fs.readFileSync(CHANGELOG_PATH, 'utf8');
-        const lines = changelogContent.split('\n');
-
-        const versionPattern = new RegExp(
-            `^#\\s+\\[?${version.replace(/\./g, '\\.')}\\]?`
-        );
-        let startIndex = -1;
-        let endIndex = -1;
-
-        // Find the beginning of the section for the version
-        for (let i = 0; i < lines.length; i++) {
-            if (versionPattern.test(lines[i])) {
-                startIndex = i + 1;
-                break;
-            }
-        }
-
-        if (startIndex === -1) {
-            return `Changes for version ${version}`;
-        }
-
-        // Find the end of the section (next heading)
-        for (let i = startIndex; i < lines.length; i++) {
-            if (lines[i].startsWith('# ')) {
-                endIndex = i;
-                break;
-            }
-        }
-
-        const sectionLines =
-            endIndex === -1
-                ? lines.slice(startIndex)
-                : lines.slice(startIndex, endIndex);
-
-        return sectionLines.join('\n').trim();
-    } catch (error) {
-        console.error('Error reading changelog:', error);
-        return `Changes for version ${version}`;
-    }
-}
-
-/**
  * Creating a GitHub release
  */
 async function createGitHubRelease(
@@ -148,7 +141,7 @@ async function createGitHubRelease(
     console.log('Creating a GitHub release...');
 
     // Get a changelog for the version
-    const changelogSection = extractChangelogForVersion(version);
+    const changelogSection = extractMatchedVersionSection(version);
 
     // Create a release body
     const fullChangelogUrl = `${repoUrl}/compare/${previousVersion}...${version}`;
@@ -184,20 +177,6 @@ async function changeReleaseInJson(jsonPath: string, release: string) {
     } catch (err: any) {
         console.error('Error reading JSON file:', err);
         process.exit(1);
-    }
-}
-
-function checkChangelogSection(version: string): boolean {
-    try {
-        const changelogContent = fs.readFileSync(CHANGELOG_PATH, 'utf8');
-        const versionPattern = new RegExp(
-            `^#\\s+\\[?${version.replace(/\./g, '\\.')}\\]?\\s*$`,
-            'm'
-        );
-        return versionPattern.test(changelogContent);
-    } catch (err) {
-        console.error('Error reading changelog:', err);
-        return false;
     }
 }
 
@@ -356,8 +335,6 @@ async function getVersion(): Promise<{
 }
 
 export async function release() {
-    setRootFolder();
-
     checkGhCli();
 
     while (true) {
@@ -384,7 +361,8 @@ export async function release() {
                 continue;
         }
 
-        const hasUpdatedChangelog = checkChangelogSection(RELEASE_VERSION);
+        const hasUpdatedChangelog =
+            !!(await extractMatchedVersionSection(RELEASE_VERSION));
 
         if (!hasUpdatedChangelog) {
             console.log(

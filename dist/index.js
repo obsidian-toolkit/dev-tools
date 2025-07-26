@@ -3,36 +3,19 @@ import { findUpSync } from 'find-up-simple';
 import path from 'node:path';
 import { select, confirm, input } from '@inquirer/prompts';
 import chalk from 'chalk';
+import { readFileSync } from 'fs';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import prettier from 'prettier';
+import { remark } from 'remark';
 import semver from 'semver';
 import { spawn } from 'child_process';
 import psList from 'ps-list';
 
 const MANIFEST_PATH = "manifest.json";
 const PACKAGE_PATH = "package.json";
-const CHANGELOG_PATH = "CHANGELOG.md";
 const DIST_PATH = "dist";
 const MAIN_BRANCHES = ["main", "master"];
-function setRootFolder() {
-  let current = process.cwd();
-  while (true) {
-    const pkg = path.join(current, "manifest.json");
-    if (fs.existsSync(pkg)) {
-      process.chdir(current);
-      return current;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      console.log(
-        chalk.red("package.json not found in any parent directories")
-      );
-      process.exit(1);
-    }
-    current = parent;
-  }
-}
 function checkGhCli() {
   try {
     execSync("gh --version", { stdio: "ignore" });
@@ -59,6 +42,46 @@ async function buildProject() {
     process.exit(1);
   }
 }
+async function traverse(version) {
+  const changelog = readFileSync("CHANGELOG.md", "utf-8");
+  let found = false;
+  function inner() {
+    return (tree) => {
+      const nodes = tree.children;
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        if (node.type !== "heading") continue;
+        if (node.depth !== 1) continue;
+        if (node.position?.start.line !== 1) continue;
+        const foundVersion = node.children[0];
+        if (foundVersion.type !== "text") continue;
+        const versionText = foundVersion.value.trim();
+        if (!semver.valid(versionText)) continue;
+        if (!semver.eq(versionText, version)) continue;
+        const sectionContent = [];
+        for (let j = i + 1; j < nodes.length; j++) {
+          const nextNode = nodes[j];
+          if (nextNode.type === "heading" && nextNode.depth <= 1) {
+            break;
+          }
+          sectionContent.push(nextNode);
+        }
+        tree.children = sectionContent;
+        found = true;
+        break;
+      }
+    };
+  }
+  const result = await remark().use(inner).process(changelog);
+  return found ? String(result) : null;
+}
+async function extractMatchedVersionSection(version) {
+  const result = await traverse(version);
+  if (!result) {
+    return null;
+  }
+  return result;
+}
 function getRepoUrl() {
   try {
     const repoInfo = execSync("gh repo view --json url", { stdio: "pipe" }).toString().trim();
@@ -69,40 +92,9 @@ function getRepoUrl() {
     process.exit(1);
   }
 }
-function extractChangelogForVersion(version) {
-  try {
-    const changelogContent = fs.readFileSync(CHANGELOG_PATH, "utf8");
-    const lines = changelogContent.split("\n");
-    const versionPattern = new RegExp(
-      `^#\\s+\\[?${version.replace(/\./g, "\\.")}\\]?`
-    );
-    let startIndex = -1;
-    let endIndex = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (versionPattern.test(lines[i])) {
-        startIndex = i + 1;
-        break;
-      }
-    }
-    if (startIndex === -1) {
-      return `Changes for version ${version}`;
-    }
-    for (let i = startIndex; i < lines.length; i++) {
-      if (lines[i].startsWith("# ")) {
-        endIndex = i;
-        break;
-      }
-    }
-    const sectionLines = endIndex === -1 ? lines.slice(startIndex) : lines.slice(startIndex, endIndex);
-    return sectionLines.join("\n").trim();
-  } catch (error) {
-    console.error("Error reading changelog:", error);
-    return `Changes for version ${version}`;
-  }
-}
 async function createGitHubRelease(version, previousVersion, repoUrl) {
   console.log("Creating a GitHub release...");
-  const changelogSection = extractChangelogForVersion(version);
+  const changelogSection = extractMatchedVersionSection(version);
   const fullChangelogUrl = `${repoUrl}/compare/${previousVersion}...${version}`;
   const releaseBody = `${changelogSection}
 
@@ -129,19 +121,6 @@ async function changeReleaseInJson(jsonPath, release2) {
   } catch (err) {
     console.error("Error reading JSON file:", err);
     process.exit(1);
-  }
-}
-function checkChangelogSection(version) {
-  try {
-    const changelogContent = fs.readFileSync(CHANGELOG_PATH, "utf8");
-    const versionPattern = new RegExp(
-      `^#\\s+\\[?${version.replace(/\./g, "\\.")}\\]?\\s*$`,
-      "m"
-    );
-    return versionPattern.test(changelogContent);
-  } catch (err) {
-    console.error("Error reading changelog:", err);
-    return false;
   }
 }
 async function performGitOperations(version, branch) {
@@ -261,7 +240,6 @@ async function getVersion() {
   }
 }
 async function release() {
-  setRootFolder();
   checkGhCli();
   while (true) {
     const { version: RELEASE_VERSION, previousVersion } = await getVersion();
@@ -283,7 +261,7 @@ async function release() {
       case "r":
         continue;
     }
-    const hasUpdatedChangelog = checkChangelogSection(RELEASE_VERSION);
+    const hasUpdatedChangelog = !!await extractMatchedVersionSection(RELEASE_VERSION);
     if (!hasUpdatedChangelog) {
       console.log(
         chalk.yellow(
@@ -340,28 +318,6 @@ function getObsidianConfig() {
   const customPath = process.env.OBSIDIAN_PATH;
   if (customPath) {
     return { command: customPath, args: ["--remote-debugging-port=9222"] };
-  }
-  const platform = process.platform;
-  if (platform === "linux") {
-    return {
-      command: "flatpak",
-      args: [
-        "run",
-        "md.obsidian.Obsidian",
-        "--remote-debugging-port=9222"
-      ]
-    };
-  } else if (platform === "darwin") {
-    return {
-      command: "open",
-      args: ["-a", "Obsidian", "--args", "--remote-debugging-port=9222"]
-    };
-  } else if (platform === "win32") {
-    return {
-      command: "obsidian.exe",
-      // или путь из реестра
-      args: ["--remote-debugging-port=9222"]
-    };
   }
   return null;
 }

@@ -19,29 +19,6 @@ function getObsidianConfig(): ObsidianConfig | null {
         return { command: customPath, args: ['--remote-debugging-port=9222'] };
     }
 
-    const platform = process.platform;
-
-    if (platform === 'linux') {
-        return {
-            command: 'flatpak',
-            args: [
-                'run',
-                'md.obsidian.Obsidian',
-                '--remote-debugging-port=9222',
-            ],
-        };
-    } else if (platform === 'darwin') {
-        return {
-            command: 'open',
-            args: ['-a', 'Obsidian', '--args', '--remote-debugging-port=9222'],
-        };
-    } else if (platform === 'win32') {
-        return {
-            command: 'obsidian.exe', // или путь из реестра
-            args: ['--remote-debugging-port=9222'],
-        };
-    }
-
     return null;
 }
 
