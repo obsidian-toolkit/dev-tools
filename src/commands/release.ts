@@ -171,10 +171,7 @@ async function createGitHubRelease(
     const releaseBody = `${changelogSection}\n\n**Full Changelog**: ${fullChangelogUrl}`;
 
     if (isDryRun) {
-        logAction(
-            'Would create release with body',
-            releaseBody.substring(0, 100) + '...'
-        );
+        logAction('Would create release with body', releaseBody);
         console.log(
             chalk.blue(
                 `[DRY RUN] Release ${version} would be created and published`
