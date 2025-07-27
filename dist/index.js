@@ -256,29 +256,15 @@ async function versionMenu(previousVersions, currentVersion) {
   }
 }
 async function getVersion() {
-  try {
-    const releasesOutput = execSync("gh release list --limit 100", {
-      stdio: "pipe"
-    }).toString().trim();
-    const releases = releasesOutput ? releasesOutput.split("\n").map((line) => line.split("	")[0]) : [];
-    const currentVersion = releases[0];
-    if (releases.length === 0) {
-      const version2 = await getNewVersion(releases, currentVersion, true);
-      return { version: version2, previousVersion: "" };
-    }
-    const version = await versionMenu(releases, currentVersion);
-    return { version, previousVersion: currentVersion };
-  } catch (error) {
-    const tagOutput = isDryRun ? "" : execSync("git tag", { stdio: "pipe" }).toString().trim();
-    const tags = tagOutput ? tagOutput.split("\n") : [];
-    const currentVersion = tags[tags.length - 1];
-    if (tags.length === 0) {
-      const version2 = await getNewVersion(tags, currentVersion, true);
-      return { version: version2, previousVersion: "" };
-    }
-    const version = await versionMenu(tags, currentVersion);
-    return { version, previousVersion: currentVersion };
+  const tagOutput = execSync("git tag", { stdio: "pipe" }).toString().trim();
+  const tags = tagOutput ? tagOutput.split("\n") : [];
+  const currentVersion = tags[tags.length - 1];
+  if (tags.length === 0) {
+    const version2 = await getNewVersion(tags, currentVersion, true);
+    return { version: version2, previousVersion: "" };
   }
+  const version = await versionMenu(tags, currentVersion);
+  return { version, previousVersion: currentVersion };
 }
 async function release(isDryRunOption) {
   isDryRun = isDryRunOption;
@@ -299,7 +285,6 @@ async function release(isDryRunOption) {
       case "n":
         console.log("See you later!");
         process.exit(0);
-        break;
       case "r":
         continue;
     }

@@ -341,42 +341,17 @@ async function getVersion(): Promise<{
     version: string;
     previousVersion: string;
 }> {
-    try {
-        const releasesOutput = execSync('gh release list --limit 100', {
-            stdio: 'pipe',
-        })
-            .toString()
-            .trim();
+    const tagOutput = execSync('git tag', { stdio: 'pipe' }).toString().trim();
+    const tags = tagOutput ? tagOutput.split('\n') : [];
+    const currentVersion = tags[tags.length - 1];
 
-        const releases = releasesOutput
-            ? releasesOutput.split('\n').map((line) => line.split('\t')[0])
-            : [];
-
-        const currentVersion = releases[0];
-
-        if (releases.length === 0) {
-            const version = await getNewVersion(releases, currentVersion, true);
-            return { version, previousVersion: '' };
-        }
-
-        const version = await versionMenu(releases, currentVersion);
-        return { version, previousVersion: currentVersion };
-    } catch (error) {
-        // Fallback on git tags if gh does not work
-        const tagOutput = isDryRun
-            ? ''
-            : execSync('git tag', { stdio: 'pipe' }).toString().trim();
-        const tags = tagOutput ? tagOutput.split('\n') : [];
-        const currentVersion = tags[tags.length - 1];
-
-        if (tags.length === 0) {
-            const version = await getNewVersion(tags, currentVersion, true);
-            return { version, previousVersion: '' };
-        }
-
-        const version = await versionMenu(tags, currentVersion);
-        return { version, previousVersion: currentVersion };
+    if (tags.length === 0) {
+        const version = await getNewVersion(tags, currentVersion, true);
+        return { version, previousVersion: '' };
     }
+
+    const version = await versionMenu(tags, currentVersion);
+    return { version, previousVersion: currentVersion };
 }
 
 export async function release(isDryRunOption: boolean): Promise<void> {
@@ -403,7 +378,6 @@ export async function release(isDryRunOption: boolean): Promise<void> {
             case 'n':
                 console.log('See you later!');
                 process.exit(0);
-                break;
             case 'r':
                 continue;
         }
