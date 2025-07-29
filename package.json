@@ -4,11 +4,12 @@
         "access": "public"
     },
     "type": "module",
-    "version": "0.0.17",
+    "version": "0.0.19",
     "scripts": {
         "build": "pkgroll"
     },
     "devDependencies": {
+        "mdast": "^2.3.2",
         "pkgroll": "^2.14.5",
         "typescript": "^5.8.3"
     },

@@ -164,7 +164,7 @@ async function performGitOperations(version, branch) {
       stdio: "ignore"
     });
     execCommand(
-      `git commit -m 'chore: update plugin version to ${version}'`,
+      `git commit -m "chore: update plugin version to ${version}"`,
       {
         stdio: "ignore"
       }
