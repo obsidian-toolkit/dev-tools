@@ -187,8 +187,12 @@ async function createGitHubRelease(
         .join(' ');
 
     try {
-        const releaseCommand = `gh release create ${version} ${distFiles} --title "Release ${version}" --notes "${releaseBody.replace(/"/g, '\\"')}"`;
-        execSync(releaseCommand, { stdio: 'inherit' });
+        const releaseNotesFile = path.join(process.cwd(), 'temp-release-notes.md');
+        fs.writeFileSync(releaseNotesFile, releaseBody);
+
+        const releaseCommand = `gh release create ${version} ${distFiles} --title "Release ${version}" --notes-file "${releaseNotesFile}"`;
+
+        fs.unlinkSync(releaseNotesFile);        execSync(releaseCommand, { stdio: 'inherit' });
         console.log(chalk.green(`Release ${version} created and published`));
     } catch (error) {
         console.error('Release creation error:', error);
