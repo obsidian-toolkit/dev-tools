@@ -131,8 +131,14 @@ async function createGitHubRelease(version, previousVersion, repoUrl) {
   }
   const distFiles = fs.readdirSync(DIST_PATH).map((file) => path.join(DIST_PATH, file)).join(" ");
   try {
-    const releaseCommand = `gh release create ${version} ${distFiles} --title "Release ${version}" --notes "${releaseBody.replace(/"/g, '\\"')}"`;
+    const releaseNotesFile = path.join(
+      process.cwd(),
+      "temp-release-notes.md"
+    );
+    fs.writeFileSync(releaseNotesFile, releaseBody);
+    const releaseCommand = `gh release create ${version} ${distFiles} --title "Release ${version}" --notes-file "${releaseNotesFile}"`;
     execSync(releaseCommand, { stdio: "inherit" });
+    fs.unlinkSync(releaseNotesFile);
     console.log(chalk.green(`Release ${version} created and published`));
   } catch (error) {
     console.error("Release creation error:", error);
